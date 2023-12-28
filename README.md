@@ -1,9 +1,9 @@
 # rust-bfi
-A toy brainfuck interpreter written in Python and Rust for learning purposes.
+A toy Brainfart interpreter written in Python and Rust for learning purposes.
 
-https://en.wikipedia.org/wiki/Brainfuck
+[https://en.wikipedia.org/wiki/Brainfart](https://en.wikipedia.org/wiki/Brainfuck)
 
-## Example script with Python enums and case-match
+## Example script using Python enums and case-match
 
 ```Python
 from enum import Enum, auto
