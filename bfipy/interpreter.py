@@ -17,7 +17,7 @@ class Command(Enum):
     OutputByte = auto()
     InputByte = auto()
     JumpRightIfZero = auto()
-    JumpLeftIfZero = auto()
+    JumpLeftIfNonZero = auto()
 
 
 class BFI:
@@ -77,9 +77,11 @@ class BFI:
         # keep track of index into input buffer for error reporting
         self.__in_buf_idx = 0
         # counter for open/closed parens
-        # used for detecting malformed jumps
-        self.__open_parens = 0
-        self.__closed_parens = 0
+        # open increments, closed decrements
+        # used for detecting unbalanced [ ]
+        self.__paren_state = 0
+        # stack for storing input buffer bytes for jumps
+        self.__jump_stack = bytearray()
 
     @property
     def mem_sz(self
@@ -95,6 +97,11 @@ class BFI:
     def ptr(self
             ) -> int:
         return self.__ptr
+    
+    @property
+    def ptr_val(self
+                ) -> int:
+        return self.__mem[self.__ptr]
     
     @property
     def out_buf(self
@@ -157,7 +164,7 @@ class BFI:
             case 91:
                 return Command.JumpRightIfZero
             case 93:
-                return Command.JumpLeftIfZero
+                return Command.JumpLeftIfNonZero
             case _:
                 return None
 
@@ -191,16 +198,14 @@ class BFI:
                         self.__err_msg = "data pointer underran memory size"
                         break
                 case Command.IncrementByte:
-                    current_val = self.__mem[self.__ptr]
-                    match self.__mem[self.__ptr]:
+                    match self.ptr_val:
                         case 255:
                             # rollover
                             self.__mem[self.__ptr] = 0
                         case _:
                             self.__mem[self.__ptr] += 1
                 case Command.DecrementByte:
-                    current_val = self.__mem[self.__ptr]
-                    match self.__mem[self.__ptr]:
+                    match self.ptr_val:
                         case 0:
                             # rollover (rollunder?)
                             self.__mem[self.__ptr] = 255
@@ -209,10 +214,61 @@ class BFI:
                 case Command.OutputByte:
                     # copy the byte at the pointer position directly
                     # into the output buffer
-                    self.__out_buf.append(self.__mem[self.__ptr])
+                    self.__out_buf.append(self.ptr_val)
                 case Command.InputByte:
                     raise NotImplementedError("have not implemented inputting a byte yet, where does it come from?")
+                case Command.JumpRightIfZero:
+                    # increment paren state
+                    self.__paren_state += 1
+                    # do the conditional jump
+                    if not self.ptr_val:
+                        # jump right
+                        # push input buffer bytes into a stack until a closing ] is found
+                        if len(self.in_buf) == 0:
+                            # make sure there are still bytes in the input buffer
+                            self.__flg_err = True
+                            self.__err_msg = "no bytes in input buffer after ["
+                            break
+                        self.__jump_stack.insert(0, byte)
+                        next_byte = self.in_buf.pop(0)
+                        while next_byte != 93 and len(self.in_buf) > 0:
+                            self.__jump_stack.insert(0, next_byte)
+                            next_byte = self.in_buf.pop(0)
+                        # check that closing paren has been found
+                        if next_byte != 93:
+                            self.__flg_err = True
+                            self.__err_msg = "no closing ] found"
+                            break
+                        # if the closing ] was found, push it back to the front of the input
+                        # buffer before continuing with execution
+                        self.in_buf.insert(0, next_byte)
+                case Command.JumpLeftIfNonZero:
+                    # check if open/close paren state makes sense
+                    if self.__paren_state < 1:
+                        # set the error flag and message
+                        self.__flg_err = True
+                        self.__err_msg = "unmatched ]"
+                        break
+                    # decrement paren state
+                    self.__paren_state -= 1
+                    # do conditional jump
+                    if self.ptr_val:
+                        # jump left
+                        # pop bytes from stack until the opening [ and push them back into front of input buffer
+                        # push the ] into input buffer first
+                        self.in_buf.insert(0, byte)
+                        next_byte = self.__jump_stack.pop(0)
+                        while next_byte != 91:
+                            self.in_buf.insert(0, next_byte)
+                            next_byte = self.__jump_stack.pop(0)
+                        # push the opening [ into input buffer before continuing with execution
+                        self.in_buf.insert(0, next_byte)
             self.__in_buf_idx += 1
+        # check the paren state at the end of execution, set error flag if not 0
+        # but do not overwrite an existing error
+        if not self.__flg_err and self.__paren_state != 0:
+            self.__flg_err = True
+            self.__err_msg = "unbalanced [ ] (paren state: {:+d})".format(self.__paren_state)
         # after executing reset run flag and set terminated flag
         # to signal execution has completed
         self.__flg_run = False

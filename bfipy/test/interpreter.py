@@ -43,7 +43,7 @@ class TestBFI(TestCase):
                     self.assertEqual(bfi._parse_command(b), Command.JumpRightIfZero,
                                      msg="{} should map to Command.JumpRightIfZero".format(b))
                 case b']': 
-                    self.assertEqual(bfi._parse_command(b), Command.JumpLeftIfZero,
+                    self.assertEqual(bfi._parse_command(b), Command.JumpLeftIfNonZero,
                                      msg="{} should map to Command.JumpLeftIfZero".format(b))  
                 case _:
                     self.assertIsNone(bfi._parse_command(b),
@@ -166,16 +166,47 @@ class TestBFI(TestCase):
             self.assertEqual(len(bfi.out_buf), 1,
                              msg="after run() output buffer should have length 1")
             self.assertEqual(bfi.out_buf[0], exp_out_byte,
-                            msg="prog: {} should produce output {} (was: {})".format(prog, exp_out_byte, bfi.out_buf[0]))
+                             msg="prog: {} should produce output {} (was: {})".format(prog, exp_out_byte, bfi.out_buf[0]))
 
     def test_run_input_byte(self):
         """ test the BFI.run() method with ',', should raise an error since it is not implemented yet """
-
         with self.assertRaises(NotImplementedError, 
                                msg="should have gotten a NotImplementedError for InputByte command"):
             bfi = BFI(mem_sz=3)
             bfi.in_buf = bytearray(b',')
             bfi.run()
+
+    def test_run_jumps_correct(self):
+        """ test the BFI.run() method with '[' and ']', conditional should work as expected """
+        progs_and_outs = [
+                # (program, expected output byte)
+                (b'+[++>]<.', 3),
+                (b'[+++].', 0),
+                (b'++++>[]<.', 4),
+                (b'+++[->+<]>.', 3),
+            ]
+        for prog, exp_out_byte in progs_and_outs:
+            bfi = BFI(mem_sz=3)
+            bfi.in_buf = bytearray(prog)
+            bfi.run()
+            self.assertEqual(bfi.out_buf[0], exp_out_byte,
+                             msg="prog: {} should produce output {} (was: {})".format(prog, exp_out_byte, bfi.out_buf[0]))
+
+
+    def test_run_jumps_unbalanced_parens(self):
+        """ test the BFI.run() method with '[' and ']', unbalanced parens should set error flag and message """
+        progs_and_emsgs = [
+                # (program, expected error message)
+                (b']', "unmatched ]"),
+            ]
+        for prog, exp_err_msg in progs_and_emsgs:
+            bfi = BFI(mem_sz=3)
+            bfi.in_buf = bytearray(prog)
+            bfi.run()
+            self.assertTrue(bfi.flg_err,
+                            msg="error flag should have been set")
+            self.assertEqual(bfi.err_msg, exp_err_msg,
+                             msg="should have set error message '{}' (was: '{}')".format(exp_err_msg, bfi.err_msg))
 
 
 # run all tests in this module if invoked directly
