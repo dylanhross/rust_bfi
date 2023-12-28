@@ -206,6 +206,12 @@ class BFI:
                             self.__mem[self.__ptr] = 255
                         case _:
                             self.__mem[self.__ptr] -= 1
+                case Command.OutputByte:
+                    # copy the byte at the pointer position directly
+                    # into the output buffer
+                    self.__out_buf.append(self.__mem[self.__ptr])
+                case Command.InputByte:
+                    raise NotImplementedError("have not implemented inputting a byte yet, where does it come from?")
             self.__in_buf_idx += 1
         # after executing reset run flag and set terminated flag
         # to signal execution has completed

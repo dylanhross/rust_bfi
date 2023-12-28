@@ -149,6 +149,33 @@ class TestBFI(TestCase):
             self.assertEqual(bfi.mem[0], exp_val,
                              msg="after {} decrements byte should have value {} (had: {})".format(n_inc, exp_val, bfi.mem[0]))
 
+    def test_run_output_byte(self):
+        """ test the BFI.run() method with '.', should add expected values to output buffer """
+        progs_and_outs = [
+                # (program, expected output byte)
+                (b'.', 0),
+                (b'+.', 1),
+                (b'+++++.', 5),
+                (b'-.', 255),
+                (b'++----.', 254),
+            ]
+        for prog, exp_out_byte in progs_and_outs:
+            bfi = BFI(mem_sz=3)
+            bfi.in_buf = bytearray(prog)
+            bfi.run()
+            self.assertEqual(len(bfi.out_buf), 1,
+                             msg="after run() output buffer should have length 1")
+            self.assertEqual(bfi.out_buf[0], exp_out_byte,
+                            msg="prog: {} should produce output {} (was: {})".format(prog, exp_out_byte, bfi.out_buf[0]))
+
+    def test_run_input_byte(self):
+        """ test the BFI.run() method with ',', should raise an error since it is not implemented yet """
+
+        with self.assertRaises(NotImplementedError, 
+                               msg="should have gotten a NotImplementedError for InputByte command"):
+            bfi = BFI(mem_sz=3)
+            bfi.in_buf = bytearray(b',')
+            bfi.run()
 
 
 # run all tests in this module if invoked directly
