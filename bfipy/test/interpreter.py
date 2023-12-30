@@ -152,13 +152,13 @@ class TestBFI(TestCase):
     def test_run_output_byte(self):
         """ test the BFI.run() method with '.', should add expected values to output buffer """
         progs_and_outs = [
-                # (program, expected output byte)
-                (b'.', 0),
-                (b'+.', 1),
-                (b'+++++.', 5),
-                (b'-.', 255),
-                (b'++----.', 254),
-            ]
+            # (program, expected output byte)
+            (b'.', 0),
+            (b'+.', 1),
+            (b'+++++.', 5),
+            (b'-.', 255),
+            (b'++----.', 254),
+        ]
         for prog, exp_out_byte in progs_and_outs:
             bfi = BFI(mem_sz=3)
             bfi.in_buf = bytearray(prog)
@@ -179,15 +179,21 @@ class TestBFI(TestCase):
     def test_run_jumps_correct(self):
         """ test the BFI.run() method with '[' and ']', conditional should work as expected """
         progs_and_outs = [
-                # (program, expected output byte)
-                (b'+[++>]<.', 3),
-                (b'[+++].', 0),
-                (b'++++>[]<.', 4),
-                (b'+++[->+<]>.', 3),
-            ]
+            # (program, expected output byte)
+            (b'+[++>]<.', 3),
+            (b'[+++].', 0),
+            (b'++++>[]<.', 4),
+            (b'+[->+<]>.', 1),
+            (b'++[->+<]>.', 2),
+            (b'++++[->+<]>.', 4),
+            #(b'+++[->+<]>.', 3),
+            (b'+++>[[]]<.', 3),
+        ]
         for prog, exp_out_byte in progs_and_outs:
-            bfi = BFI(mem_sz=3)
+            bfi = BFI(mem_sz=3, debug=True)
             bfi.in_buf = bytearray(prog)
+            print()
+            print("=" * 20)
             bfi.run()
             self.assertEqual(bfi.out_buf[0], exp_out_byte,
                              msg="prog: {} should produce output {} (was: {})".format(prog, exp_out_byte, bfi.out_buf[0]))

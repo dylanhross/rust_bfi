@@ -51,7 +51,7 @@ class BFI:
     """
 
     def __init__(self, 
-                 mem_sz: int = 4096
+                 mem_sz: int = 4096, debug: bool = False
                  ) -> None:
         """
         Init a new BF interpreter instance
@@ -60,7 +60,11 @@ class BFI:
         ----------
         mem_sz : ``int``, default=4096
             size of memory array (bytes)
+        debug : ``bool``
+            debug flag, print interpreter state before each command
         """
+        # store debug flag
+        self.__debug = debug
         self.__mem_sz = mem_sz  # R
         # initialize memory array (filled w/ zeros)
         self.__mem = bytearray(self.__mem_sz)  # R
@@ -74,12 +78,10 @@ class BFI:
         self.__flg_trm = False  # R
         self.__flg_err = False  # R
         self.__err_msg = ""  # R
-        # keep track of index into input buffer for error reporting
-        self.__in_buf_idx = 0
-        # counter for open/closed parens
+        # counter for open/closed brackets
         # open increments, closed decrements
-        # used for detecting unbalanced [ ]
-        self.__paren_state = 0
+        # used doing jumps and detecting unbalanced [ ]
+        self.__bracket_state = 0
         # stack for storing input buffer bytes for jumps
         self.__jump_stack = bytearray()
 
@@ -128,10 +130,21 @@ class BFI:
                 ) -> str:
         return self.__err_msg
     
-    @property
-    def in_buf_idx(self
-                   ) -> int:
-        return self.__in_buf_idx
+    def _print_state(self
+                     ) -> None:
+        """ print out the current state of the interpreter for debugging """
+        print("-" * 20)
+        print("input buffer:", self.in_buf)
+        print("output buffer:", self.__out_buf)
+        print("memory:", self.__mem)
+        print("jump stack:", self.__jump_stack)
+        print("data pointer:", self.__ptr)
+        print("bracket state:", self.__bracket_state)
+        print("run flag:", self.__flg_run)
+        print("terminated flag:", self.flg_trm)
+        print("error flag:", self.__flg_err)
+        print("error message:", self.__err_msg)
+        print("-" * 20)
     
     def _parse_command(self, 
                        byte: int) -> Optional[Command]:
@@ -168,107 +181,144 @@ class BFI:
             case _:
                 return None
 
+    def _move_pointer_right(self
+                            ) -> None:
+        """ handler for Command.MovePointerRight """
+        self.__ptr += 1
+        # make sure we have not overrun available memory
+        if self.__ptr >= self.mem_sz:
+            # set the error flag and message
+            self.__flg_err = True
+            self.__err_msg = "data pointer overran memory size"
+        
+    def _move_pointer_left(self
+                           ) -> None:
+        """ handler for Command.MovePointerLeft """
+        self.__ptr -= 1
+        # make sure we have not underrun available memory
+        if self.__ptr < 0:
+            # set the error flag and message
+            self.__flg_err = True
+            self.__err_msg = "data pointer underran memory size"
+
+    def _increment_byte(self
+                        ) -> None:
+        """ handler for Command.IncrementByte """
+        match self.ptr_val:
+            case 255:
+                # rollover
+                self.__mem[self.__ptr] = 0
+            case _:
+                self.__mem[self.__ptr] += 1
+
+    def _decrement_byte(self
+                        ) -> None:
+        """ handler for Command.IncrementByte """
+        match self.ptr_val:
+            case 0:
+                # rollover (rollunder?)
+                self.__mem[self.__ptr] = 255
+            case _:
+                self.__mem[self.__ptr] -= 1
+
+    def _output_byte(self
+                     ) -> None:
+        """ handler for Command.OutputByte """
+        # copy the byte at the pointer position directly
+        # into the output buffer
+        self.__out_buf.append(self.ptr_val)
+
+    def _input_byte(self
+                    ) -> None:
+        """ handler for Command.InputByte """
+        raise NotImplementedError("have not implemented inputting a byte yet, where does it come from?")
+
+    def _jump_right_if_zero(self
+                            ) -> None:
+        """ handler for Command.JumpRightIfZero """
+        # if byte at the current data pointer location is 0
+        # skip all commands until a matching closing bracket is reached
+        # and push everything (including that closing bracket) onto the jump stack
+        pre_bracket_state = self.__bracket_state
+        self.__bracket_state += 1
+        if not self.ptr_val:
+            # jump right
+            # push everything onto the jump stack
+            while len(self.in_buf) > 0 and self.__bracket_state != pre_bracket_state:
+                if self.in_buf[0] == 91:
+                    self.__bracket_state += 1
+                if self.in_buf[0] == 93:
+                    self.__bracket_state -= 1
+                self.__jump_stack.insert(0, self.in_buf.pop(0))
+            # detect an error condition
+            if self.__bracket_state != pre_bracket_state:
+                self.__flg_err = True
+                self.__err_msg = "could not find matching ]" 
+
+    def _jump_left_if_non_zero(self
+                               ) -> None:
+        """ handler for Command.JumpLeftIfNonZero """
+        # check for unbalanced ]
+        if self.__bracket_state == 0:
+            self.__flg_err = True
+            self.__err_msg = "unmatched ]"
+        # if byte at the current data pointer location is not 0
+        # jump back to the matching opening bracket [
+        # by popping from the jump stack
+        pre_bracket_state = self.__bracket_state
+        self.__bracket_state -= 1
+        if self.ptr_val:
+            # TODO: There is something wrong with the pushing/popping
+            #       logic here where commands are getting jumbled when
+            #       they get moved from the jump stack back to the input
+            #       buffer 
+            # jump left
+            # pop everything (except matching [) off of jump stack
+            while self.__bracket_state != pre_bracket_state:
+                if self.in_buf[0] == 91:
+                    self.__bracket_state += 1
+                if self.in_buf[0] == 93:
+                    self.__bracket_state -= 1
+                self.in_buf.insert(0, self.__jump_stack.pop(0))
+            # move the [ back to the jump stack
+            self.__jump_stack.insert(0, self.in_buf.pop(0))
+
     def run(self
             ) -> None:
         """
         Run the interpreter, consume the input buffer one byte at a time
-        then parse and run the command
+        then parse and run the command 
+        (use individual handler methods for each command)
         """
         # set running flag while interpreter is running
         self.__flg_run = True
         # consume 1 byte at a time from input buffer
         # ignore any bytes that are not recognized commands
-        while len(self.in_buf) > 0:
+        # continue while there are still bytes in the input buffer
+        # and the error flag has not been set
+        while len(self.in_buf) > 0 and  not self.__flg_err:
+            if self.__debug:
+                self._print_state()
             byte = self.in_buf.pop(0)
             match self._parse_command(byte):
                 case Command.MovePointerRight:
-                    self.__ptr += 1
-                    # make sure we have not overrun available memory
-                    if self.__ptr >= self.mem_sz:
-                        # set the error flag and message
-                        self.__flg_err = True
-                        self.__err_msg = "data pointer overran memory size"
-                        break
+                    self._move_pointer_right()
                 case Command.MovePointerLeft:
-                    self.__ptr -= 1
-                    # make sure we have not underrun available memory
-                    if self.__ptr < 0:
-                        # set the error flag and message
-                        self.__flg_err = True
-                        self.__err_msg = "data pointer underran memory size"
-                        break
+                    self._move_pointer_left()
                 case Command.IncrementByte:
-                    match self.ptr_val:
-                        case 255:
-                            # rollover
-                            self.__mem[self.__ptr] = 0
-                        case _:
-                            self.__mem[self.__ptr] += 1
+                    self._increment_byte()
                 case Command.DecrementByte:
-                    match self.ptr_val:
-                        case 0:
-                            # rollover (rollunder?)
-                            self.__mem[self.__ptr] = 255
-                        case _:
-                            self.__mem[self.__ptr] -= 1
+                    self._decrement_byte()
                 case Command.OutputByte:
-                    # copy the byte at the pointer position directly
-                    # into the output buffer
-                    self.__out_buf.append(self.ptr_val)
+                    self._output_byte()
                 case Command.InputByte:
-                    raise NotImplementedError("have not implemented inputting a byte yet, where does it come from?")
+                    self._input_byte()
                 case Command.JumpRightIfZero:
-                    # increment paren state
-                    self.__paren_state += 1
-                    # do the conditional jump
-                    if not self.ptr_val:
-                        # jump right
-                        # push input buffer bytes into a stack until a closing ] is found
-                        if len(self.in_buf) == 0:
-                            # make sure there are still bytes in the input buffer
-                            self.__flg_err = True
-                            self.__err_msg = "no bytes in input buffer after ["
-                            break
-                        self.__jump_stack.insert(0, byte)
-                        next_byte = self.in_buf.pop(0)
-                        while next_byte != 93 and len(self.in_buf) > 0:
-                            self.__jump_stack.insert(0, next_byte)
-                            next_byte = self.in_buf.pop(0)
-                        # check that closing paren has been found
-                        if next_byte != 93:
-                            self.__flg_err = True
-                            self.__err_msg = "no closing ] found"
-                            break
-                        # if the closing ] was found, push it back to the front of the input
-                        # buffer before continuing with execution
-                        self.in_buf.insert(0, next_byte)
+                    self._jump_right_if_zero()
                 case Command.JumpLeftIfNonZero:
-                    # check if open/close paren state makes sense
-                    if self.__paren_state < 1:
-                        # set the error flag and message
-                        self.__flg_err = True
-                        self.__err_msg = "unmatched ]"
-                        break
-                    # decrement paren state
-                    self.__paren_state -= 1
-                    # do conditional jump
-                    if self.ptr_val:
-                        # jump left
-                        # pop bytes from stack until the opening [ and push them back into front of input buffer
-                        # push the ] into input buffer first
-                        self.in_buf.insert(0, byte)
-                        next_byte = self.__jump_stack.pop(0)
-                        while next_byte != 91:
-                            self.in_buf.insert(0, next_byte)
-                            next_byte = self.__jump_stack.pop(0)
-                        # push the opening [ into input buffer before continuing with execution
-                        self.in_buf.insert(0, next_byte)
-            self.__in_buf_idx += 1
-        # check the paren state at the end of execution, set error flag if not 0
-        # but do not overwrite an existing error
-        if not self.__flg_err and self.__paren_state != 0:
-            self.__flg_err = True
-            self.__err_msg = "unbalanced [ ] (paren state: {:+d})".format(self.__paren_state)
+                    self._jump_left_if_non_zero()
+            # after every loop cycle push the byte that was just processed onto the jump stack
+            self.__jump_stack.insert(0, byte)
         # after executing reset run flag and set terminated flag
         # to signal execution has completed
         self.__flg_run = False
