@@ -84,6 +84,8 @@ class BFI:
         self.__bracket_state = 0
         # stack for storing input buffer bytes for jumps
         self.__jump_stack = bytearray()
+        # current byte being processed
+        self.__byte = None
 
     @property
     def mem_sz(self
@@ -268,20 +270,18 @@ class BFI:
         pre_bracket_state = self.__bracket_state
         self.__bracket_state -= 1
         if self.ptr_val:
-            # TODO: There is something wrong with the pushing/popping
-            #       logic here where commands are getting jumbled when
-            #       they get moved from the jump stack back to the input
-            #       buffer 
             # jump left
             # pop everything (except matching [) off of jump stack
+            self.in_buf.insert(0, self.__byte)  # put the ] back in the input buffer first
             while self.__bracket_state != pre_bracket_state:
-                if self.in_buf[0] == 91:
+                if self.__jump_stack[0] == 91:
                     self.__bracket_state += 1
-                if self.in_buf[0] == 93:
+                if self.__jump_stack[0] == 93:
                     self.__bracket_state -= 1
                 self.in_buf.insert(0, self.__jump_stack.pop(0))
+            # put the [ into self.__byte, it will get pushed back onto the jump stack
             # move the [ back to the jump stack
-            self.__jump_stack.insert(0, self.in_buf.pop(0))
+            self.__byte = self.in_buf.pop(0)
 
     def run(self
             ) -> None:
@@ -299,8 +299,8 @@ class BFI:
         while len(self.in_buf) > 0 and  not self.__flg_err:
             if self.__debug:
                 self._print_state()
-            byte = self.in_buf.pop(0)
-            match self._parse_command(byte):
+            self.__byte = self.in_buf.pop(0)
+            match self._parse_command(self.__byte):
                 case Command.MovePointerRight:
                     self._move_pointer_right()
                 case Command.MovePointerLeft:
@@ -318,7 +318,7 @@ class BFI:
                 case Command.JumpLeftIfNonZero:
                     self._jump_left_if_non_zero()
             # after every loop cycle push the byte that was just processed onto the jump stack
-            self.__jump_stack.insert(0, byte)
+            self.__jump_stack.insert(0, self.__byte)
         # after executing reset run flag and set terminated flag
         # to signal execution has completed
         self.__flg_run = False

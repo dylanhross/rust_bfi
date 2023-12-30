@@ -186,15 +186,22 @@ class TestBFI(TestCase):
             (b'+[->+<]>.', 1),
             (b'++[->+<]>.', 2),
             (b'++++[->+<]>.', 4),
-            #(b'+++[->+<]>.', 3),
             (b'+++>[[]]<.', 3),
+            # this one puts "Hello World\n" into the output buffer
+            (b'++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.', 72), 
         ]
+        # set this flag to True to print the interpreter's state before and after run() method
+        debug = False
         for prog, exp_out_byte in progs_and_outs:
-            bfi = BFI(mem_sz=3, debug=True)
+            bfi = BFI(mem_sz=32)
             bfi.in_buf = bytearray(prog)
-            print()
-            print("=" * 20)
+            if debug:
+                print()
+                print("=" * 20)
+                bfi._print_state()
             bfi.run()
+            if debug:
+                bfi._print_state()
             self.assertEqual(bfi.out_buf[0], exp_out_byte,
                              msg="prog: {} should produce output {} (was: {})".format(prog, exp_out_byte, bfi.out_buf[0]))
 
@@ -204,6 +211,7 @@ class TestBFI(TestCase):
         progs_and_emsgs = [
                 # (program, expected error message)
                 (b']', "unmatched ]"),
+                (b'[+++', "could not find matching ]")
             ]
         for prog, exp_err_msg in progs_and_emsgs:
             bfi = BFI(mem_sz=3)
