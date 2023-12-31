@@ -280,7 +280,6 @@ class BFI:
                     self.__bracket_state -= 1
                 self.in_buf.insert(0, self.__jump_stack.pop(0))
             # put the [ into self.__byte, it will get pushed back onto the jump stack
-            # move the [ back to the jump stack
             self.__byte = self.in_buf.pop(0)
 
     def run(self
