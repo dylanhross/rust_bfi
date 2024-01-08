@@ -213,6 +213,12 @@ impl BFInterpreter {
         self.term_flg = true;
     }
 
+    pub fn fill_in_buff (&mut self, prog: String) {
+        for c in prog.as_bytes() {
+            self.in_buf.push_back(*c);
+        }
+    }
+
 }
 
 
@@ -223,7 +229,54 @@ mod tests {
 
     #[test]
     fn new_interpreter_no_errors () {
+        let bfi = BFInterpreter::new(8);
+        println!("\n--------------------");
+        println!("bfi: {:?}", bfi);
+    }
+
+    #[test]
+    fn test_fill_in_buf () {
+        // fill input buffer, no errors
         let mut bfi = BFInterpreter::new(8);
-        bfi.run();
+        bfi.fill_in_buff(String::from("++++"));
+        //println!("\n--------------------");
+        //println!("bfi: {:?}", bfi);
+    }
+
+    #[test]
+    fn interpterter_run_inc_dec () {
+        let progs: Vec<(String, u8)> = vec![
+            // program, expected value
+            (String::from("+++"), 3),
+            (String::from("+++---"), 0),
+        ];
+        for (prog, exp_value) in progs {
+            let mut bfi = BFInterpreter::new(8);
+            bfi.fill_in_buff(prog);
+            //println!("\n--------------------");
+            //println!("bfi: {:?}", bfi);
+            bfi.run();
+            //println!("bfi: {:?}", bfi);
+            //println!("expected_value: {}", exp_value);
+            assert_eq!(bfi.mem[0], exp_value);
+        }
+    }
+
+    fn interpreter_run_mv_ptr () {
+        let progs: Vec<(String, usize)> = vec![
+            // program, expected pointer value
+            (String::from("+++>"), 1),
+            (String::from("++>+-<--"), 0),
+        ];
+        for (prog, exp_value) in progs {
+            let mut bfi = BFInterpreter::new(8);
+            bfi.fill_in_buff(prog);
+            //println!("\n--------------------");
+            //println!("bfi: {:?}", bfi);
+            bfi.run();
+            //println!("bfi: {:?}", bfi);
+            //println!("expected_value: {}", exp_value);
+            assert_eq!(bfi.data_ptr, exp_value);
+        }
     }
 }

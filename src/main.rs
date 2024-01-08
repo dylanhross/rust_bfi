@@ -9,5 +9,6 @@ mod interpreter;
 
 
 fn main() {
-    println!("Hello, world!");
+    let mut bfi = interpreter::BFInterpreter::new(8);
+    bfi.run();
 }
